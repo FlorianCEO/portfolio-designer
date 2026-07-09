@@ -7,17 +7,11 @@ import { createClient } from "@supabase/supabase-js";
    ============================================================ */
 
 /* ---------- Supabase (base de données) ----------
-   Variables acceptées (par ordre de priorité) :
-   - VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (fichier .env, Vercel manuel)
-   - NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY (intégration Vercel↔Supabase)
+   Renseignez VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY dans un fichier .env
+   (en local) et dans les variables d'environnement Vercel (en production).
    Sans configuration, le site fonctionne en mode data.json. */
-const env = import.meta.env;
-const SUPABASE_URL = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY =
-  env.VITE_SUPABASE_ANON_KEY ||
-  env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY ||
-  "";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const supabase =
   SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 const SUPABASE_ENABLED = !!supabase;
