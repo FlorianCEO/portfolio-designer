@@ -289,46 +289,30 @@ function fileToBase64(file) {
 }
 
 async function extractCvFromPdf(base64) {
-  const prompt = `Voici le CV d'un designer au format PDF. Extrais toutes les experiences professionnelles (et les formations si elles sont presentes), de la plus recente a la plus ancienne.
-
-Reponds UNIQUEMENT avec un objet JSON valide, sans aucun texte avant ou apres, sans backticks Markdown, au format exact suivant :
-{"experiences":[{"dates":"2022 \u2192 Aujourd'hui","title":"Intitule du poste \u2014 Entreprise","description":"Resume de la mission en 2 phrases maximum, en francais."}]}
-
-Regles :
-- "dates" : la periode telle qu'indiquee dans le CV, reformatee "AAAA \u2192 AAAA" ou "AAAA \u2192 Aujourd'hui".
-- "title" : intitule du poste suivi d'un tiret cadratin et du nom de l'entreprise (ou de l'ecole pour une formation).
-- "description" : synthese concise en francais des responsabilites ou du diplome. Reste fidele au contenu du CV sans rien inventer.
-- Si une information est absente, mets une chaine vide.`;
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
+  // L'appel passe par la fonction serverless /api/extract-cv,
+  // qui garde la cle API Anthropic cote serveur.
+  const response = await fetch("/api/extract-cv", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-            { type: "text", text: prompt },
-          ],
-        },
-      ],
-    }),
+    body: JSON.stringify({ pdfBase64: base64 }),
   });
-  const data = await response.json();
-  if (data.error) throw new Error(data.error.message || "Erreur de l'API");
-  const text = (data.content || [])
-    .filter((i) => i.type === "text")
-    .map((i) => i.text)
-    .join("\n");
-  const clean = text.replace(/```json|```/g, "").trim();
-  const parsed = JSON.parse(clean);
-  if (!parsed || !Array.isArray(parsed.experiences) || parsed.experiences.length === 0) {
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (e) {
+    /* reponse non JSON */
+  }
+  if (!response.ok) {
+    throw new Error(
+      (data && data.error) ||
+        "Le service d'import de CV n'est pas disponible sur ce deploiement."
+    );
+  }
+  const experiences = (data && data.experiences) || [];
+  if (!Array.isArray(experiences) || experiences.length === 0) {
     throw new Error("Aucune experience detectee dans ce PDF");
   }
-  return parsed.experiences.map((e) => ({
+  return experiences.map((e) => ({
     id: uid(),
     dates: e.dates || "",
     title: e.title || "",
@@ -1076,6 +1060,10 @@ function Admin({ data, setData, onSaveDraft, onPublish, onExport, onExportJson, 
     const file = e.target.files && e.target.files[0];
     if (cvFileRef.current) cvFileRef.current.value = "";
     if (!file) return;
+    if (file.size > 3.5 * 1024 * 1024) {
+      setCvImport({ status: "error", items: [], error: "PDF trop volumineux (3,5 Mo maximum). Compressez-le ou exportez-le en qualite reduite." });
+      return;
+    }
     if (file.type !== "application/pdf") {
       setCvImport({ status: "error", items: [], error: "Le fichier doit \u00eatre un PDF." });
       return;
