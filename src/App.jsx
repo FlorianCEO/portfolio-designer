@@ -37,6 +37,9 @@ try {
 }
 const supabase = supabaseClient;
 const SUPABASE_ENABLED = !!supabase;
+if (SUPABASE_ENABLED) {
+  console.info("[Portfolio] Supabase actif — projet :", SUPABASE_URL);
+}
 
 const ADMIN_EMAIL = "thomas@designisvital.co";
 const ADMIN_PASS = "backtothefuture";
@@ -911,11 +914,22 @@ function Login({ onSuccess, onBack }) {
           password: pass,
         });
         if (error) {
-          setErr("Identifiants incorrects.");
+          console.error("[Portfolio] Erreur Supabase Auth :", error);
+          const msg = (error.message || "").toLowerCase();
+          if (msg.includes("invalid login credentials")) {
+            setErr("Email ou mot de passe incorrect pour ce projet Supabase.");
+          } else if (msg.includes("email not confirmed")) {
+            setErr("Email non confirmé : dans Supabase, recréez l'utilisateur en cochant « Auto Confirm User ».");
+          } else if (msg.includes("rate limit") || msg.includes("too many")) {
+            setErr("Trop de tentatives : patientez une minute puis réessayez.");
+          } else {
+            setErr(`Erreur Supabase : ${error.message}`);
+          }
         } else {
           onSuccess();
         }
       } catch (e) {
+        console.error("[Portfolio] Connexion Supabase impossible :", e);
         setErr("Connexion impossible. Vérifiez votre réseau.");
       } finally {
         setBusy(false);
