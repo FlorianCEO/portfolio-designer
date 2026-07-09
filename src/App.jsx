@@ -252,6 +252,240 @@ async function savePublished(data) {
   }
 }
 
+/* ---------- Export HTML statique (pour hébergement externe) ---------- */
+const esc = (s = "") =>
+  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+function buildStaticHtml(data) {
+  const { settings: s, clients, projects, about, background, contact } = data;
+  const pill = () =>
+    `<span class="pf-pill ${s.available ? "ok" : "ko"}"><span class="pf-dot"></span>${esc(
+      s.available ? s.availableLabel : s.unavailableLabel
+    )}</span>`;
+
+  const clientsHtml = clients.length
+    ? `<section class="pf-clients"><div class="pf-container pf-clients-grid">${clients
+        .map(
+          (c) =>
+            `<div class="pf-client" title="${esc(c.name)}">${
+              c.image ? `<img src="${esc(c.image)}" alt="${esc(c.name)}">` : `<span>${esc(c.name)}</span>`
+            }</div>`
+        )
+        .join("")}</div></section>`
+    : "";
+
+  const projectsHtml = projects
+    .map((p) => {
+      const links = (p.links || []).filter((l) => l.url);
+      const isInternal = p.linkType === "internal";
+      const isExternal = p.linkType === "external" && p.externalUrl;
+      const openTag = isInternal
+        ? `<a href="#project-${p.id}" style="text-decoration:none;color:inherit;display:block">`
+        : isExternal
+        ? `<a href="${esc(p.externalUrl)}" target="_blank" rel="noreferrer" style="text-decoration:none;color:inherit;display:block">`
+        : "<div>";
+      const closeTag = isInternal || isExternal ? "</a>" : "</div>";
+      return `<article class="pf-project">
+${openTag}<div class="pf-project-content"><h3>${esc(p.title)}${isInternal || isExternal ? " →" : ""}</h3><p>${esc(p.description)}</p><dl class="pf-meta">${
+        p.years ? `<div class="pf-meta-row"><dt>Années</dt><dd>${esc(p.years)}</dd></div>` : ""
+      }${p.role ? `<div class="pf-meta-row"><dt>Rôle</dt><dd>${esc(p.role)}</dd></div>` : ""}${
+        p.scope ? `<div class="pf-meta-row"><dt>Périmètre</dt><dd>${esc(p.scope)}</dd></div>` : ""
+      }${
+        links.length
+          ? `<div class="pf-meta-row"><dt>Liens</dt><dd>${links
+              .map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label || "Lien")} ↗</a>`)
+              .join(" · ")}</dd></div>`
+          : ""
+      }</dl></div>${closeTag}
+<div class="pf-project-visual">${
+        p.image
+          ? `<img class="pf-project-img" src="${esc(p.image)}" alt="${esc(p.title)}">`
+          : `<div class="pf-project-imgph">Visuel du projet</div>`
+      }</div>
+</article>`;
+    })
+    .join("");
+
+  const contactBlock = (topMargin) => {
+    const contactLinks = [
+      contact.email ? `<a href="mailto:${esc(contact.email)}">${esc(contact.email)}</a>` : "",
+      contact.phone ? `<a href="tel:${esc(contact.phone.replace(/\s/g, ""))}">${esc(contact.phone)}</a>` : "",
+      ...contact.links.filter((l) => l.url).map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noreferrer">${esc(l.label)}</a>`),
+    ]
+      .filter(Boolean)
+      .join("");
+    return `<section class="pf-section pf-contact"${topMargin ? ' style="border-bottom:none"' : ""} id="contact"><div class="pf-container"><h2>${esc(contact.heading)}</h2>${pill()}<div class="pf-contact-note" style="margin-top:14px">${esc(contact.note)}</div><div class="pf-contact-note">${esc(contact.terms)}</div><div class="pf-contact-row">${contactLinks}</div></div></section>`;
+  };
+
+  // Pages internes des projets (routées par hash #project-<id>)
+  const projectPagesHtml = projects
+    .filter((p) => p.linkType === "internal")
+    .map((p) => {
+      const pg = p.page || {};
+      const sections = pg.sections || [];
+      const anchorId = (sec, i) => `p${p.id}-sec-${i}`;
+      const toc =
+        sections.length > 1
+          ? `<nav class="pp-toc"><div class="pp-toc-label">Sommaire</div><div class="pp-toc-list">${sections
+              .map((sec, i) => `<a href="#${anchorId(sec, i)}" onclick="return scrollInPage('${anchorId(sec, i)}')">${esc(sec.title || `Section ${i + 1}`)}</a>`)
+              .join("")}</div></nav>`
+          : "";
+      const sectionsHtml = sections
+        .map(
+          (sec, i) =>
+            `<section class="pp-section" id="${anchorId(sec, i)}">${sec.title ? `<h3>${esc(sec.title)}</h3>` : ""}${(sec.text || "")
+              .split(/\n\n+/)
+              .filter(Boolean)
+              .map((para) => `<p>${esc(para)}</p>`)
+              .join("")}${sec.image ? `<img src="${esc(sec.image)}" alt="">` : ""}</section>`
+        )
+        .join("");
+      const credits = (pg.credits || []).filter((c) => c.label || c.value);
+      const creditsHtml = credits.length
+        ? `<div class="pp-credits">${credits
+            .map((c) => `<div><span>${esc(c.label)}</span>${esc(c.value)}</div>`)
+            .join("")}</div>`
+        : "";
+      return `<div class="pp-page" id="project-page-${p.id}" style="display:none"><main class="pf-container">
+<a class="pp-back" href="#work">← Retour aux projets</a>
+<h1 class="pp-title">${esc(p.title)}</h1>
+<dl class="pp-metagrid">${p.peoples ? `<div><dt>Équipe</dt><dd>${esc(p.peoples)}</dd></div>` : ""}${
+        p.years ? `<div><dt>Années</dt><dd>${esc(p.years)}</dd></div>` : ""
+      }${p.role ? `<div><dt>Rôle</dt><dd>${esc(p.role)}</dd></div>` : ""}${
+        p.scope ? `<div><dt>Périmètre</dt><dd>${esc(p.scope)}</dd></div>` : ""
+      }</dl>
+${p.image ? `<img class="pp-hero-img" src="${esc(p.image)}" alt="${esc(p.title)}">` : ""}
+${toc}
+<article class="pp-article">${pg.heading ? `<h2>${esc(pg.heading)}</h2>` : ""}${
+        pg.tldr
+          ? `<div class="pp-tldr"><div class="pp-tldr-label">${esc(pg.tldrTitle || "En bref")}</div><p>${esc(pg.tldr)}</p></div>`
+          : ""
+      }${sectionsHtml}${creditsHtml}</article>
+${contactBlock(true)}
+</main></div>`;
+    })
+    .join("");
+
+  const aboutHtml = (about.text || "")
+    .split(/\n\n+/)
+    .map((para) => `<p>${esc(para)}</p>`)
+    .join("");
+
+  const bgHtml = background
+    .map(
+      (j) =>
+        `<article class="pf-job"><div class="pf-job-dates">${esc(j.dates)}</div>${
+          j.logo
+            ? `<img class="pf-job-logo" src="${esc(j.logo)}" alt="">`
+            : `<div class="pf-job-logoph">Logo</div>`
+        }<div><h3>${esc(j.title)}</h3><p>${esc(j.description)}</p></div></article>`
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="fr" style="scroll-behavior:smooth">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(s.name)} — Portfolio</title>
+<meta name="description" content="${esc(s.metaLine)}">
+<style>${CSS}</style>
+</head>
+<body style="margin:0">
+<div class="pf-root" data-theme="light" id="root">
+<header class="pf-header"><div class="pf-container pf-header-in">
+<a class="pf-logo" href="#top" style="text-decoration:none">${esc(s.initials)}</a>
+<nav class="pf-nav"><a href="#work">Projets</a><a href="#about">À propos</a><a href="#background">Parcours</a><a href="#contact">Contact</a></nav>
+<div class="pf-header-right">${pill()}<button class="pf-theme" id="themeBtn">Sombre</button></div>
+</div></header>
+<div id="home">
+<main id="top">
+<section class="pf-hero pf-container">
+<div class="pf-hero-name">${esc(s.name)}</div>
+${s.portrait ? `<img class="pf-hero-portrait" src="${esc(s.portrait)}" alt="Portrait de ${esc(s.name)}">` : ""}
+<h1>${esc(s.heroLine1)} ${esc(s.heroLine2)}</h1>
+<div class="pf-hero-meta"><span>${esc(s.metaLine)}</span>${pill()}</div>
+</section>
+${clientsHtml}
+<section class="pf-section" id="work"><div class="pf-container"><div class="pf-eyebrow">Projets sélectionnés</div>${projectsHtml}</div></section>
+<section class="pf-section pf-about" id="about"><div class="pf-container"><div class="pf-eyebrow">${esc(about.title || "Ma façon de travailler")}</div>${aboutHtml}</div></section>
+<section class="pf-section" id="background"><div class="pf-container"><div class="pf-eyebrow">Parcours</div>${bgHtml}</div></section>
+${contactBlock(false)}
+</main>
+</div>
+${projectPagesHtml}
+<footer class="pf-footer pf-container"><span>© ${new Date().getFullYear()} ${esc(s.name)}</span></footer>
+</div>
+<script>
+(function () {
+  var root = document.getElementById("root");
+  var btn = document.getElementById("themeBtn");
+  function applyTheme(t, updateUrl) {
+    root.setAttribute("data-theme", t);
+    btn.textContent = t === "dark" ? "Clair" : "Sombre";
+    if (updateUrl) {
+      try {
+        var u = new URL(window.location.href);
+        u.searchParams.set("theme", t);
+        window.history.replaceState({}, "", u);
+      } catch (e) {}
+    }
+  }
+  // Theme initial depuis l'URL (?theme=dark ou ?theme=light)
+  var initial = "light";
+  try {
+    var pr = new URLSearchParams(window.location.search).get("theme");
+    if (pr === "dark" || pr === "light") initial = pr;
+  } catch (e) {}
+  applyTheme(initial, false);
+  btn.addEventListener("click", function () {
+    applyTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark", true);
+  });
+})();
+// Routage par hash : #project-<id> affiche la page interne du projet
+function route() {
+  var hash = location.hash || "";
+  var home = document.getElementById("home");
+  var pages = document.querySelectorAll(".pp-page");
+  var match = hash.match(/^#project-(.+)$/);
+  var target = match ? document.getElementById("project-page-" + match[1]) : null;
+  pages.forEach(function (pg) { pg.style.display = "none"; });
+  if (target) {
+    home.style.display = "none";
+    target.style.display = "block";
+    window.scrollTo(0, 0);
+  } else {
+    home.style.display = "block";
+    if (hash) {
+      var el = document.querySelector(hash.replace(/[^#a-zA-Z0-9_-]/g, ""));
+      if (el) el.scrollIntoView();
+    }
+  }
+}
+function scrollInPage(id) {
+  var el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth" });
+  return false;
+}
+window.addEventListener("hashchange", route);
+route();
+</script>
+</body>
+</html>`;
+}
+
+function downloadHtmlFile(html, filename) {
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 /* ---------- Redimensionnement des images uploadées ---------- */
 function fileToResizedDataUrl(file, maxDim = 1400, mime = "image/jpeg", quality = 0.82) {
   return new Promise((resolve, reject) => {
@@ -1565,7 +1799,27 @@ export default function PortfolioApp() {
   const [loaded, setLoaded] = useState(false);
   const [view, setView] = useState("site"); // site | login | admin | preview
   const [authed, setAuthed] = useState(false);
-  const [theme, setTheme] = useState("light");
+  // Thème initialisé depuis l'URL (?theme=dark ou ?theme=light) pour que
+  // le lien partagé ouvre directement dans le bon mode.
+  const [theme, setThemeState] = useState(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("theme");
+      if (t === "dark" || t === "light") return t;
+    } catch (e) {
+      /* environnement sans URL */
+    }
+    return "light";
+  });
+  const setTheme = useCallback((t) => {
+    setThemeState(t);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("theme", t);
+      window.history.replaceState({}, "", url);
+    } catch (e) {
+      /* URL non modifiable : on garde juste l'état local */
+    }
+  }, []);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [toast, setToast] = useState("");
